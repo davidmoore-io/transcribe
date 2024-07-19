@@ -5,10 +5,9 @@ import subprocess
 import logging
 from pathlib import Path
 import yaml
-import whisper
+import openai
 from pydub import AudioSegment
 import xattr
-import openai
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -20,10 +19,11 @@ def load_config():
     with open(config_path, 'r') as config_file:
         return yaml.safe_load(config_file)
 
-def transcribe_audio(audio_path, model):
+def transcribe_audio(audio_path):
     logging.info(f"Transcribing {audio_path}")
-    result = model.transcribe(audio_path)
-    return result["text"]
+    with open(audio_path, "rb") as audio_file:
+        transcript = openai.Audio.transcribe("whisper-1", audio_file)
+    return transcript["text"]
 
 def save_transcript(transcript, output_dir, filename):
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -62,8 +62,6 @@ def main(audio_path):
     config = load_config()
     output_dir = Path(config['output_directory']) / 'transcripts' / Path(audio_path).stem
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    model = whisper.load_model("large")
     
     # Convert M4A to WAV if necessary
     if audio_path.lower().endswith('.m4a'):
@@ -71,7 +69,7 @@ def main(audio_path):
         AudioSegment.from_file(audio_path, format="m4a").export(wav_path, format="wav")
         audio_path = wav_path
 
-    transcript = transcribe_audio(audio_path, model)
+    transcript = transcribe_audio(audio_path)
     output_path = save_transcript(transcript, output_dir, Path(audio_path).stem)
     
     tags = analyze_content(transcript)
