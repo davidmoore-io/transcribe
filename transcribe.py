@@ -5,7 +5,7 @@ import subprocess
 import logging
 from pathlib import Path
 import yaml
-import openai
+from openai import OpenAI
 from pydub import AudioSegment
 import xattr
 
@@ -19,11 +19,11 @@ def load_config():
     with open(config_path, 'r') as config_file:
         return yaml.safe_load(config_file)
 
-def transcribe_audio(audio_path):
+def transcribe_audio(audio_path, client):
     logging.info(f"Transcribing {audio_path}")
     with open(audio_path, "rb") as audio_file:
-        transcript = openai.Audio.transcribe("whisper-1", audio_file)
-    return transcript["text"]
+        transcript = client.audio.transcriptions.create(model="whisper-1", file=audio_file)
+    return transcript.text
 
 def save_transcript(transcript, output_dir, filename):
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -33,21 +33,16 @@ def save_transcript(transcript, output_dir, filename):
     logging.info(f"Transcript saved to {output_path}")
     return output_path
 
-def analyze_content(transcript):
-    openai.api_key = os.getenv("OPENAI_API_KEY")
-    if not openai.api_key:
-        logging.warning("OpenAI API key not found. Using default tagging method.")
-        return ["transcript"]
-
+def analyze_content(transcript, client):
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that generates relevant tags for a given transcript."},
                 {"role": "user", "content": f"Please generate 3-5 relevant tags for the following transcript, separated by commas:\n\n{transcript[:1000]}..."}
             ]
         )
-        tags = response.choices[0].message['content'].split(',')
+        tags = response.choices[0].message.content.split(',')
         return [tag.strip() for tag in tags]
     except Exception as e:
         logging.error(f"Error using OpenAI API: {e}")
@@ -63,16 +58,18 @@ def main(audio_path):
     output_dir = Path(config['output_directory']) / 'transcripts' / Path(audio_path).stem
     output_dir.mkdir(parents=True, exist_ok=True)
     
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    
     # Convert M4A to WAV if necessary
     if audio_path.lower().endswith('.m4a'):
         wav_path = audio_path.rsplit('.', 1)[0] + '.wav'
         AudioSegment.from_file(audio_path, format="m4a").export(wav_path, format="wav")
         audio_path = wav_path
 
-    transcript = transcribe_audio(audio_path)
+    transcript = transcribe_audio(audio_path, client)
     output_path = save_transcript(transcript, output_dir, Path(audio_path).stem)
     
-    tags = analyze_content(transcript)
+    tags = analyze_content(transcript, client)
     add_tags(output_path, tags)
 
     # Open the directory containing the transcript

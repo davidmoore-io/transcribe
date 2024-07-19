@@ -2,4 +2,4 @@ whisper
 pydub
 xattr
 PyYAML
-openai
+openairm -
