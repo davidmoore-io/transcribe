@@ -1,0 +1,5 @@
+whisper
+pydub
+xattr
+PyYAML
+openai
